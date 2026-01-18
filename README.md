@@ -19,7 +19,7 @@ A client-side companion mod that displays faction territories on JourneyMap.
 ## Installation
 
 1. Download the latest release from [Releases](https://github.com/Arona74/JourneyFactions/releases)
-2. Place the `.jar` file in your `mods` folder
+2. Place the `.jar` file in your `mods` folder (do the same on server side)
 3. Launch Minecraft with Fabric
 
 ## Usage
@@ -32,19 +32,17 @@ A client-side companion mod that displays faction territories on JourneyMap.
 
 ## How It Works
 
-JourneyFactions is a **client-side only** mod that:
+JourneyFactions is a companion mod that:
 
 1. **Listens for faction data** from server-side faction mods
 2. **Processes territory shapes** with proper hole detection
 3. **Creates JourneyMap overlays** using clean polygon rendering
 4. **Updates in real-time** as territories change
 
-### Need a specific version of Factions Mod (Fork made by Arona74)
-https://github.com/Arona74/factions
-
 ## Configuration
 
 The mod works out of the box with no configuration needed.
+Just make sure the mod is also installed server-side.
 
 ## License
 
