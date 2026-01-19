@@ -1,7 +1,7 @@
 package io.arona74.journeyfactions.journeymap;
 
 import io.arona74.journeyfactions.JourneyFactions;
-import journeymap.client.api.IClientAPI;
+import journeymap.api.v2.client.IClientAPI;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;

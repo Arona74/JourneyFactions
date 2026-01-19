@@ -1,18 +1,17 @@
 package io.arona74.journeyfactions.server;
 
 import io.arona74.journeyfactions.JourneyFactionsMain;
+import io.arona74.journeyfactions.network.FactionPayloads.*;
 import io.icker.factions.api.persistents.Claim;
 import io.icker.factions.api.persistents.Faction;
 import io.icker.factions.core.FactionsManager;
-import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.math.ChunkPos;
 
 import java.awt.Color;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -23,22 +22,17 @@ import java.util.Set;
  */
 public class JourneyFactionsIntegration {
 
-    // Packet identifiers - must match client-side JourneyFactions mod
-    public static final Identifier FACTION_DATA_SYNC = new Identifier("factions", "faction_data_sync");
-    public static final Identifier FACTION_UPDATE = new Identifier("factions", "faction_update");
-    public static final Identifier CHUNK_CLAIM = new Identifier("factions", "chunk_claim");
-    public static final Identifier CHUNK_UNCLAIM = new Identifier("factions", "chunk_unclaim");
-    public static final Identifier FACTION_DELETE = new Identifier("factions", "faction_delete");
-    public static final Identifier CLIENT_REQUEST_DATA = new Identifier("factions", "client_request_data");
-
     public static void initialize() {
         JourneyFactionsMain.LOGGER.info("Initializing JourneyFactions integration...");
 
+        // Note: Payload types are registered in JourneyFactionsMain.registerNetworkPayloads()
+
         // Handle client requests for faction data
-        ServerPlayNetworking.registerGlobalReceiver(CLIENT_REQUEST_DATA, (server, player, handler, buf, responseSender) -> {
+        ServerPlayNetworking.registerGlobalReceiver(ClientRequestDataPayload.ID, (payload, context) -> {
+            ServerPlayerEntity player = context.player();
             JourneyFactionsMain.LOGGER.info("Player {} requested factions data for JourneyMap", player.getName().getString());
 
-            server.execute(() -> {
+            context.server().execute(() -> {
                 sendFactionDataToPlayer(player);
             });
         });
@@ -64,19 +58,17 @@ public class JourneyFactionsIntegration {
         try {
             JourneyFactionsMain.LOGGER.debug("Sending factions data to player: {}", player.getName().getString());
 
-            PacketByteBuf buf = PacketByteBufs.create();
-
             // Get all factions
             Collection<Faction> allFactions = Faction.all();
+            List<FactionData> factionDataList = new ArrayList<>(allFactions.size());
 
-            buf.writeVarInt(allFactions.size());
             JourneyFactionsMain.LOGGER.debug("Sending {} factions to {}", allFactions.size(), player.getName().getString());
 
             for (Faction faction : allFactions) {
-                writeFactionToBuffer(buf, faction);
+                factionDataList.add(createFactionData(faction));
             }
 
-            ServerPlayNetworking.send(player, FACTION_DATA_SYNC, buf);
+            ServerPlayNetworking.send(player, new FactionDataSyncPayload(factionDataList));
             JourneyFactionsMain.LOGGER.debug("Factions data sent successfully to {}", player.getName().getString());
 
         } catch (Exception e) {
@@ -91,12 +83,11 @@ public class JourneyFactionsIntegration {
         try {
             JourneyFactionsMain.LOGGER.debug("Broadcasting factions update: {}", faction.getName());
 
-            PacketByteBuf buf = PacketByteBufs.create();
-            writeFactionToBuffer(buf, faction);
+            FactionUpdatePayload payload = new FactionUpdatePayload(createFactionData(faction));
 
             // Send to all online players
             for (ServerPlayerEntity player : FactionsManager.playerManager.getPlayerList()) {
-                ServerPlayNetworking.send(player, FACTION_UPDATE, buf);
+                ServerPlayNetworking.send(player, payload);
             }
 
         } catch (Exception e) {
@@ -111,14 +102,11 @@ public class JourneyFactionsIntegration {
         try {
             JourneyFactionsMain.LOGGER.debug("Broadcasting chunk claim: {} by {}", chunk, faction.getName());
 
-            PacketByteBuf buf = PacketByteBufs.create();
-            buf.writeString(faction.getID().toString()); // Use faction ID
-            buf.writeInt(chunk.x);
-            buf.writeInt(chunk.z);
+            ChunkClaimPayload payload = new ChunkClaimPayload(faction.getID().toString(), chunk.x, chunk.z);
 
             // Send to all online players
             for (ServerPlayerEntity player : FactionsManager.playerManager.getPlayerList()) {
-                ServerPlayNetworking.send(player, CHUNK_CLAIM, buf);
+                ServerPlayNetworking.send(player, payload);
             }
 
         } catch (Exception e) {
@@ -133,13 +121,11 @@ public class JourneyFactionsIntegration {
         try {
             JourneyFactionsMain.LOGGER.debug("Broadcasting chunk unclaim: {}", chunk);
 
-            PacketByteBuf buf = PacketByteBufs.create();
-            buf.writeInt(chunk.x);
-            buf.writeInt(chunk.z);
+            ChunkUnclaimPayload payload = new ChunkUnclaimPayload(chunk.x, chunk.z);
 
             // Send to all online players
             for (ServerPlayerEntity player : FactionsManager.playerManager.getPlayerList()) {
-                ServerPlayNetworking.send(player, CHUNK_UNCLAIM, buf);
+                ServerPlayNetworking.send(player, payload);
             }
 
         } catch (Exception e) {
@@ -154,12 +140,11 @@ public class JourneyFactionsIntegration {
         try {
             JourneyFactionsMain.LOGGER.debug("Broadcasting factions deletion: {}", faction.getName());
 
-            PacketByteBuf buf = PacketByteBufs.create();
-            buf.writeString(faction.getID().toString());
+            FactionDeletePayload payload = new FactionDeletePayload(faction.getID().toString());
 
             // Send to all online players
             for (ServerPlayerEntity player : FactionsManager.playerManager.getPlayerList()) {
-                ServerPlayNetworking.send(player, FACTION_DELETE, buf);
+                ServerPlayNetworking.send(player, payload);
             }
 
         } catch (Exception e) {
@@ -168,39 +153,24 @@ public class JourneyFactionsIntegration {
     }
 
     /**
-     * Write faction data to packet buffer
+     * Create FactionData from a Faction
      */
-    private static void writeFactionToBuffer(PacketByteBuf buf, Faction faction) {
-        try {
-            buf.writeString(faction.getID().toString());           // Faction ID (UUID as string)
-            buf.writeString(faction.getName());                    // Faction name
-            buf.writeString(getFormattedName(faction));            // Display name with color
+    private static FactionData createFactionData(Faction faction) {
+        String id = faction.getID().toString();
+        String name = faction.getName();
+        String displayName = getFormattedName(faction);
+        int typeOrdinal = getFactionTypeOrdinal(faction);
 
-            // Faction type - convert to ordinal for client
-            int typeOrdinal = getFactionTypeOrdinal(faction);
-            buf.writeVarInt(typeOrdinal);
+        Color factionColor = getFactionColor(faction);
+        boolean hasColor = (factionColor != null);
+        int colorRgb = (factionColor != null) ? factionColor.getRGB() : 0;
 
-            // Color - extract from faction
-            Color factionColor = getFactionColor(faction);
-            if (factionColor != null) {
-                buf.writeBoolean(true);
-                buf.writeInt(factionColor.getRGB());
-            } else {
-                buf.writeBoolean(false);
-            }
-
-            // Claimed chunks - convert from List<Claim> to Set<ChunkPos>
-            Set<ChunkPos> chunks = getChunkPosFromClaims(faction);
-            buf.writeVarInt(chunks.size());
-            for (ChunkPos chunk : chunks) {
-                buf.writeInt(chunk.x);
-                buf.writeInt(chunk.z);
-            }
-
-        } catch (Exception e) {
-            JourneyFactionsMain.LOGGER.error("Error writing factions to buffer: " + faction.getName(), e);
-            throw e;
+        List<ChunkData> chunks = new ArrayList<>();
+        for (ChunkPos chunk : getChunkPosFromClaims(faction)) {
+            chunks.add(new ChunkData(chunk.x, chunk.z));
         }
+
+        return new FactionData(id, name, displayName, typeOrdinal, hasColor, colorRgb, chunks);
     }
 
     /**

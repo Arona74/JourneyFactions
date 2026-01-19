@@ -1,17 +1,16 @@
 package io.arona74.journeyfactions.journeymap;
 
 import io.arona74.journeyfactions.JourneyFactions;
-import io.arona74.journeyfactions.config.JourneyFactionsConfig;
 import io.arona74.journeyfactions.data.ClientFaction;
 import io.arona74.journeyfactions.data.ClientFactionManager;
-import journeymap.client.api.IClientAPI;
-import journeymap.client.api.display.Context;
-import journeymap.client.api.display.PolygonOverlay;
-import journeymap.client.api.model.MapPolygon;
-import journeymap.client.api.model.MapPolygonWithHoles;
-import journeymap.client.api.model.ShapeProperties;
-import journeymap.client.api.model.TextProperties;
-import journeymap.client.api.util.PolygonHelper;
+import journeymap.api.v2.client.IClientAPI;
+import journeymap.api.v2.client.display.Context;
+import journeymap.api.v2.client.display.PolygonOverlay;
+import journeymap.api.v2.client.model.MapPolygon;
+import journeymap.api.v2.client.model.MapPolygonWithHoles;
+import journeymap.api.v2.client.model.ShapeProperties;
+import journeymap.api.v2.client.model.TextProperties;
+import journeymap.api.v2.client.util.PolygonHelper;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.registry.RegistryKey;
@@ -55,14 +54,13 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
 
         PolygonOverlay labelOverlay = new PolygonOverlay(
             JourneyFactions.MOD_ID,
-            overlayId,
             worldKey,
             invisible,
             tiny
         );
 
-        labelOverlay.setActiveUIs(EnumSet.of(Context.UI.Any));
-        labelOverlay.setActiveMapTypes(EnumSet.of(Context.MapType.Any));
+        labelOverlay.setActiveUIs(Context.UI.values());
+        labelOverlay.setActiveMapTypes(Context.MapType.values());
         labelOverlay.setOverlayGroupName("faction_labels");
         labelOverlay.setTitle(label);
         labelOverlay.setTextProperties(textProps);
@@ -146,8 +144,10 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     }
     
     public void updateDisplay() {
-        // Refresh overlays periodically
-        loadAllFactionOverlays();
+        // Don't reload overlays on every display update - only when data changes
+        // The onFactionUpdated/onFactionRemoved callbacks handle data changes
+        // This method is called frequently by DisplayUpdateEvent, so we just log it
+        JourneyFactions.debugLog("Display update event - {} overlays active", factionOverlays.size());
     }
     
     /**
@@ -183,9 +183,13 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     private void loadAllFactionOverlays() {
         try {
             JourneyFactions.debugLog("Loading faction overlays...");
+
+            // Clear existing overlays first to prevent accumulation
+            clearAllOverlays();
+
             Collection<ClientFaction> factions = JourneyFactions.getFactionManager().getAllFactions();
             JourneyFactions.debugLog("Found {} factions to process", factions.size());
-            
+
             for (ClientFaction faction : factions) {
                 JourneyFactions.debugLog("Processing faction: {} (type: {}, chunks: {})",faction.getName(), faction.getType(), faction.getClaimedChunks().size());
                 
@@ -268,13 +272,12 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
                 // --- 1) Main polygon overlay ---
                 PolygonOverlay overlay = new PolygonOverlay(
                     JourneyFactions.MOD_ID,
-                    overlayId,
                     worldKey,
                     createShapeProperties(faction),
                     polygons.get(i)
                 );
-                overlay.setActiveUIs(EnumSet.of(Context.UI.Any));
-                overlay.setActiveMapTypes(EnumSet.of(Context.MapType.Any));
+                overlay.setActiveUIs(Context.UI.values());
+                overlay.setActiveMapTypes(Context.MapType.values());
                 overlay.setTextProperties(createTextProperties(faction));
                 
                 if (JourneyFactions.CONFIG.separateLabelOverlay) {
@@ -517,39 +520,31 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     
     private TextProperties createTextProperties(ClientFaction faction) {
         Color factionColor = faction.getEffectiveColor();
-        
+
         Color backgroundColor;
         Color textColor;
 
-        // Faction color is black → use lighter background
-        if (factionColor.getRed() == 0 && factionColor.getGreen() == 0 && factionColor.getBlue() == 0) {
-            // Default text
-            textColor = new Color(factionColor.getRGB());
-            // Lighter background
-            backgroundColor = new Color(170, 170, 170, 128);
-            JourneyFactions.debugLog("Faction color is BLACK");
+        // Calculate luminance to determine if color is dark
+        double luminance = (0.299 * factionColor.getRed() + 0.587 * factionColor.getGreen() + 0.114 * factionColor.getBlue()) / 255.0;
+        boolean isDarkColor = luminance < 0.5;
+
+        if (isDarkColor) {
+            // Dark faction color → use light background for contrast
+            textColor = factionColor.brighter().brighter();
+            backgroundColor = new Color(220, 220, 220, 200);
+            JourneyFactions.debugLog("Faction color is DARK (luminance: {})", luminance);
         } else {
-            // Faction color is dark_gray → use lighter text
-            if (factionColor.getRed() == 85 && factionColor.getGreen() == 85 && factionColor.getBlue() == 85) {
-                // Lighter text
-                textColor = new Color(170, 170, 170, 128);
-                // Default background
-                backgroundColor = new Color(200, 200, 200, 128);
-                JourneyFactions.debugLog("Faction color is DARK_GRAY");
-            } else {
-                // Default text
-                textColor = new Color(factionColor.getRGB());
-                // Default background
-                backgroundColor = new Color(0, 0, 0, 128);
-                JourneyFactions.debugLog("Faction color is ELSE");
-            }
+            // Light faction color → use dark background for contrast
+            textColor = factionColor.darker();
+            backgroundColor = new Color(30, 30, 30, 200);
+            JourneyFactions.debugLog("Faction color is LIGHT (luminance: {})", luminance);
         }
 
         return new TextProperties()
-            .setColor(textColor.brighter().getRGB())
-            .setOpacity(0f)
+            .setColor(textColor.getRGB())
+            .setOpacity(1f)
             .setBackgroundColor(backgroundColor.getRGB())
-            .setBackgroundOpacity(1f)
+            .setBackgroundOpacity(0.8f)
             .setScale(1.0f)
             .setFontShadow(false);
     }

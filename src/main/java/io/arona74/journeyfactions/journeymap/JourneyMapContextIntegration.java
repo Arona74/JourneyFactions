@@ -2,8 +2,8 @@ package io.arona74.journeyfactions.journeymap;
 
 import io.arona74.journeyfactions.JourneyFactions;
 import io.arona74.journeyfactions.client.gui.FactionControlsScreen;
-import journeymap.client.api.IClientAPI;
-import journeymap.client.api.display.ModPopupMenu;
+import journeymap.api.v2.client.IClientAPI;
+import journeymap.api.v2.client.fullscreen.ModPopupMenu;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.math.BlockPos;
 
