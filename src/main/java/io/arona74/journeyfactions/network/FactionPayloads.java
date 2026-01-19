@@ -47,7 +47,7 @@ public class FactionPayloads {
                 String name = PacketCodecs.STRING.decode(buf);
                 String displayName = PacketCodecs.STRING.decode(buf);
                 int typeOrdinal = PacketCodecs.VAR_INT.decode(buf);
-                boolean hasColor = PacketCodecs.BOOL.decode(buf);
+                boolean hasColor = buf.readBoolean();
                 int colorRgb = PacketCodecs.VAR_INT.decode(buf);
 
                 int chunkCount = PacketCodecs.VAR_INT.decode(buf);
@@ -65,7 +65,7 @@ public class FactionPayloads {
                 PacketCodecs.STRING.encode(buf, data.name);
                 PacketCodecs.STRING.encode(buf, data.displayName);
                 PacketCodecs.VAR_INT.encode(buf, data.typeOrdinal);
-                PacketCodecs.BOOL.encode(buf, data.hasColor);
+                buf.writeBoolean(data.hasColor);
                 PacketCodecs.VAR_INT.encode(buf, data.colorRgb);
 
                 PacketCodecs.VAR_INT.encode(buf, data.chunks.size());

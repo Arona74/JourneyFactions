@@ -6,6 +6,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -42,7 +43,7 @@ public class FactionToggleButton {
                 "key.journeyfactions.toggle", // Translation key
                 InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_G, // Default to 'G' key
-                "category.journeyfactions" // Category
+                KeyBinding.Category.create(Identifier.of("journeyfactions", "category")) // Category
             ));
             
             JourneyFactions.debugLog("Keybinding registered: {}", toggleKeyBinding != null ? "SUCCESS" : "FAILED");
@@ -130,7 +131,6 @@ public class FactionToggleButton {
         
         if (toggleKeyBinding != null) {
             JourneyFactions.debugLog("Bound key: {}", toggleKeyBinding.getBoundKeyLocalizedText().getString());
-            JourneyFactions.debugLog("Translation key: {}", toggleKeyBinding.getTranslationKey());
             JourneyFactions.debugLog("Category: {}", toggleKeyBinding.getCategory());
         }
         

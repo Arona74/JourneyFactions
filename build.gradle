@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.11-SNAPSHOT'
+    id 'fabric-loom' version '1.14-SNAPSHOT'
     id 'maven-publish'
 }
 
@@ -54,20 +54,20 @@ dependencies {
 
     // JourneyMap API - compile only (not bundled, JourneyMap provides it at runtime)
     // Note: Using modImplementation to ensure it's available to both main and client sourcesets
-    modImplementation("info.journeymap:journeymap-api-fabric:2.0.0-1.21.1-SNAPSHOT") { changing = true }
+    modImplementation("info.journeymap:journeymap-api-fabric:2.0.0-1.21.11-SNAPSHOT") { changing = true }
 
     // Cloth config - updated to correct version and repository
-    modApi("me.shedaniel.cloth:cloth-config-fabric:15.0.140") {
+    modApi("me.shedaniel.cloth:cloth-config-fabric:21.11.153") {
         exclude(group: "net.fabricmc.fabric-api")
     }
-    include "me.shedaniel.cloth:cloth-config-fabric:15.0.140"
+    include "me.shedaniel.cloth:cloth-config-fabric:21.11.153"
 
     // ModMenu for config screen integration
-    modImplementation "com.terraformersmc:modmenu:11.0.3"
+    modImplementation "com.terraformersmc:modmenu:17.0.0-beta.2"
 
     // Factions mod - compile only for server-side integration
     // This allows building against the Factions API without bundling it
-    modCompileOnly "maven.modrinth:factions:2.8.0"
+    modCompileOnly "maven.modrinth:factions:2.9.3"
 }
 
 processResources {
