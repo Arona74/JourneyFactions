@@ -2,134 +2,116 @@ package io.arona74.journeyfactions.journeymap;
 
 import io.arona74.journeyfactions.JourneyFactions;
 import io.arona74.journeyfactions.client.gui.FactionControlsScreen;
-import journeymap.client.api.IClientAPI;
 import journeymap.client.api.display.ModPopupMenu;
+import journeymap.client.api.display.ThemeButtonDisplay;
+
+import journeymap.client.api.event.fabric.FabricEvents;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.math.BlockPos;
 
 /**
- * Integrates faction controls with JourneyMap's context menu system
- * Following MapFrontiers approach for context menu integration
+ * Integrates faction controls with JourneyMap's fullscreen map UI
+ * using FabricEvents for button display and popup menu events.
  */
 public class JourneyMapContextIntegration {
-    
+
     /**
-     * Initialize the context integration
+     * Initialize the context integration by subscribing to JourneyMap Fabric events.
      */
-    public static void initialize(IClientAPI jmAPI) {
+    public static void initialize() {
+        FabricEvents.ADDON_BUTTON_DISPLAY_EVENT.register(event -> {
+            addButtons(event.getThemeButtonDisplay());
+        });
+
+        FabricEvents.FULLSCREEN_POPUP_MENU_EVENT.register(event -> {
+            addPopupMenu(event.getPopupMenu());
+        });
+
         JourneyFactions.debugLog("JourneyMap context integration initialized");
     }
-    
+
     /**
-     * Create faction-related menu items for JourneyMap context menus
-     * This would be called by JourneyMap when building context menus
+     * Add faction buttons to JourneyMap's fullscreen map toolbar.
      */
-    public static void addFactionMenuItems(ModPopupMenu contextMenu) {
+    private static void addButtons(ThemeButtonDisplay buttonDisplay) {
         try {
-            if (contextMenu == null) {
-                return;
-            }
-            
-            // Add faction controls submenu
-            ModPopupMenu factionSubmenu = contextMenu.createSubItemList("Faction Controls");
-            
-            // Add toggle action
-            factionSubmenu.addMenuItem(getToggleText(), new ModPopupMenu.Action() {
-                @Override
-                public void doAction(BlockPos blockPos) {
-                    FactionDisplayManager.toggleFactionDisplay();
-                    showToggleFeedback();
-                }
-            });
-            
-            // Add open controls screen action
-            factionSubmenu.addMenuItemScreen("Faction Settings", new FactionControlsScreen());
-            
-            JourneyFactions.debugLog("Added faction controls to JourneyMap context menu");
-            
+            buttonDisplay.addThemeToggleButton(
+                    "Show/Hide Factions",
+                    "faction_toggle",
+                    FactionDisplayManager.isFactionDisplayEnabled(),
+                    b -> {
+                        FactionDisplayManager.toggleFactionDisplay();
+                        showToggleFeedback();
+                    }
+            );
+
+            buttonDisplay.addThemeButton(
+                    "Faction Settings",
+                    "faction_settings",
+                    b -> openFactionControlsScreen()
+            );
+
+            JourneyFactions.debugLog("Added faction buttons to JourneyMap toolbar");
+        } catch (Exception e) {
+            JourneyFactions.LOGGER.error("Error adding faction buttons: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Add faction items to JourneyMap's right-click context menu.
+     */
+    private static void addPopupMenu(ModPopupMenu popupMenu) {
+        try {
+            ModPopupMenu subMenu = popupMenu.createSubItemList("Faction Controls");
+
+            subMenu.addMenuItem(
+                    FactionDisplayManager.isFactionDisplayEnabled() ? "Hide Factions" : "Show Factions",
+                    blockPos -> {
+                        FactionDisplayManager.toggleFactionDisplay();
+                        showToggleFeedback();
+                    }
+            );
+
+            subMenu.addMenuItem(
+                    "Faction Settings",
+                    blockPos -> openFactionControlsScreen()
+            );
+
+            JourneyFactions.debugLog("Added faction items to JourneyMap context menu");
         } catch (Exception e) {
             JourneyFactions.LOGGER.error("Error adding faction menu items: {}", e.getMessage());
         }
     }
-    
+
     /**
-     * Create a standalone popup menu for faction controls
+     * Open the faction controls screen.
      */
-    public static ModPopupMenu createFactionPopupMenu() {
-        // Since ModPopupMenu is an interface, we need to implement it
-        // This is a simplified implementation for demonstration
-        return new ModPopupMenu() {
-            @Override
-            public ModPopupMenu addMenuItem(String label, Action action) {
-                JourneyFactions.debugLog("Would add menu item: {}", label);
-                return this;
-            }
-            
-            @Override
-            public ModPopupMenu addMenuItemScreen(String label, net.minecraft.client.gui.screen.Screen screen) {
-                JourneyFactions.debugLog("Would add screen menu item: {}", label);
-                return this;
-            }
-            
-            @Override
-            public ModPopupMenu createSubItemList(String label) {
-                JourneyFactions.debugLog("Would create submenu: {}", label);
-                return this;
-            }
-        };
-    }
-    
-    /**
-     * Open the faction controls screen directly
-     */
-    public static void openFactionControlsScreen() {
-        try {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null) {
-                client.setScreen(new FactionControlsScreen());
-                JourneyFactions.debugLog("Opened faction controls screen");
-            }
-        } catch (Exception e) {
-            JourneyFactions.LOGGER.error("Error opening faction controls screen: {}", e.getMessage());
+    private static void openFactionControlsScreen() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null) {
+            client.execute(() -> client.setScreen(new FactionControlsScreen()));
         }
     }
-    
+
     /**
-     * Get dynamic toggle text
-     */
-    private static String getToggleText() {
-        return FactionDisplayManager.isFactionDisplayEnabled() 
-            ? "Hide Factions" 
-            : "Show Factions";
-    }
-    
-    /**
-     * Show feedback for toggle action
+     * Show feedback for toggle action on the action bar.
      */
     private static void showToggleFeedback() {
-        try {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null && client.player != null) {
-                String message = FactionDisplayManager.isFactionDisplayEnabled() 
-                    ? "§eFaction territories: §aShown" 
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.player != null) {
+            String message = FactionDisplayManager.isFactionDisplayEnabled()
+                    ? "§eFaction territories: §aShown"
                     : "§eFaction territories: §cHidden";
-                
-                client.player.sendMessage(
-                    net.minecraft.text.Text.literal(message), 
-                    true // Action bar
-                );
-            }
-        } catch (Exception e) {
-            JourneyFactions.LOGGER.debug("Could not send toggle feedback: {}", e.getMessage());
+            client.player.sendMessage(
+                    net.minecraft.text.Text.literal(message),
+                    true
+            );
         }
-        
-        JourneyFactions.debugLog("Faction display toggled via context menu");
     }
-    
+
     /**
-     * Cleanup method
+     * Cleanup method.
      */
     public static void cleanup() {
-        JourneyFactions.LOGGER.info("JourneyMap context integration cleanup completed");
+        JourneyFactions.debugLog("JourneyMap context integration cleanup completed");
     }
 }

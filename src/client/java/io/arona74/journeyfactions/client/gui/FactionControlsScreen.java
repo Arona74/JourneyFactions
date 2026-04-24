@@ -22,7 +22,6 @@ public class FactionControlsScreen extends Screen {
     private static final int BUTTON_SPACING = 25;
     
     private ButtonWidget toggleButton;
-    private ButtonWidget statusButton;
     private ButtonWidget closeButton;
     
     private int factionCount = 0;
@@ -53,7 +52,6 @@ public class FactionControlsScreen extends Screen {
         ).dimensions(centerX - BUTTON_WIDTH / 2, startY + BUTTON_SPACING * 3, BUTTON_WIDTH, BUTTON_HEIGHT).build();
         
         this.addDrawableChild(this.toggleButton);
-        this.addDrawableChild(this.statusButton);
         this.addDrawableChild(this.closeButton);
     }
     

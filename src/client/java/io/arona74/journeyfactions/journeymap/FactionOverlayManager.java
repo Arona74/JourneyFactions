@@ -20,11 +20,19 @@ import net.minecraft.world.World;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class FactionOverlayManager implements ClientFactionManager.FactionUpdateListener {
     
     private final IClientAPI jmAPI;
-    private final Map<String, PolygonOverlay> factionOverlays;
+    private final Map<String, PolygonOverlay> factionOverlays = new ConcurrentHashMap<>();
+    private final ExecutorService overlayExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "JourneyFactions-overlay");
+        t.setDaemon(true);
+        return t;
+    });
     private static final int LABEL_Y = 70;
 
     private PolygonOverlay createLabelOnlyOverlay(
@@ -129,8 +137,6 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     
     public FactionOverlayManager(IClientAPI jmAPI) {
         this.jmAPI = jmAPI;
-        this.factionOverlays = new HashMap<>();
-        
         // Initialize the display manager
         FactionDisplayManager.initialize(this);
     }
@@ -181,25 +187,25 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     }
     
     private void loadAllFactionOverlays() {
-        try {
-            JourneyFactions.debugLog("Loading faction overlays...");
-            Collection<ClientFaction> factions = JourneyFactions.getFactionManager().getAllFactions();
-            JourneyFactions.debugLog("Found {} factions to process", factions.size());
-            
-            for (ClientFaction faction : factions) {
-                JourneyFactions.debugLog("Processing faction: {} (type: {}, chunks: {})",faction.getName(), faction.getType(), faction.getClaimedChunks().size());
-                
-                // Only display factions that have claimed territory
-                if (!faction.getClaimedChunks().isEmpty()) {
-                    createOrUpdateFactionOverlay(faction, faction.getClaimedChunks());
-                } else {
-                    JourneyFactions.debugLog("Skipping faction {} - no claimed chunks", faction.getName());
+        overlayExecutor.submit(() -> {
+            try {
+                JourneyFactions.debugLog("Loading faction overlays...");
+                Collection<ClientFaction> factions = JourneyFactions.getFactionManager().getAllFactions();
+                JourneyFactions.debugLog("Found {} factions to process", factions.size());
+
+                for (ClientFaction faction : factions) {
+                    JourneyFactions.debugLog("Processing faction: {} (type: {}, chunks: {})", faction.getName(), faction.getType(), faction.getClaimedChunks().size());
+
+                    if (!faction.getClaimedChunks().isEmpty()) {
+                        createOrUpdateFactionOverlay(faction, faction.getClaimedChunks());
+                    } else {
+                        JourneyFactions.debugLog("Skipping faction {} - no claimed chunks", faction.getName());
+                    }
                 }
+            } catch (Exception e) {
+                // JourneyFactions.LOGGER.error("Error loading faction overlays", e);
             }
-            
-        } catch (Exception e) {
-            // JourneyFactions.LOGGER.error("Error loading faction overlays", e);
-        }
+        });
     }
     
     private BlockPos computeHullCentroid(Set<ChunkPos> region) {
@@ -244,15 +250,15 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
         
         JourneyFactions.debugLog("Creating overlay for faction: {} with {} chunks", faction.getDisplayName(), claimedChunks.size());
         
-        // Sort connected regions by size so overlays match
+        // Compute connected regions once — reused for both polygon building and label anchors
         List<Set<ChunkPos>> regions = findConnectedRegions(claimedChunks);
         regions.sort((a, b) -> Integer.compare(b.size(), a.size()));
-        
+
         JourneyFactions.debugLog("Found {} connected regions for faction {}", regions.size(), faction.getDisplayName());
-        
+
         try {
-            // Build polygons with holes preserved
-            List<MapPolygonWithHoles> polygons = buildPolygonsUsingJourneyMapHelper(claimedChunks);
+            // Build polygons with holes preserved, passing pre-computed regions
+            List<MapPolygonWithHoles> polygons = buildPolygonsUsingJourneyMapHelper(regions);
             if (polygons.isEmpty()) {
                 JourneyFactions.debugLog("No polygons generated for faction {}", faction.getDisplayName());
                 return;
@@ -354,41 +360,30 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     
     /**
      * Build polygons using JourneyMap's official PolygonHelper for proper rendering,
-     * preserving holes when present.
+     * preserving holes when present. Accepts pre-computed connected regions to avoid
+     * redundant flood fill.
      */
-    private List<MapPolygonWithHoles> buildPolygonsUsingJourneyMapHelper(Set<ChunkPos> chunks) {
+    private List<MapPolygonWithHoles> buildPolygonsUsingJourneyMapHelper(List<Set<ChunkPos>> regions) {
         List<MapPolygonWithHoles> polygons = new ArrayList<>();
 
-        try {
-            // Split into connected regions first
-            List<Set<ChunkPos>> regions = findConnectedRegions(chunks);
-            regions.sort((a, b) -> Integer.compare(b.size(), a.size())); // largest first
+        for (Set<ChunkPos> region : regions) {
+            try {
+                List<MapPolygonWithHoles> polysWithHoles = PolygonHelper.createChunksPolygon(region, 70);
 
-            for (Set<ChunkPos> region : regions) {
-                try {
-                    // Let JourneyMap do the heavy lifting
-                    List<MapPolygonWithHoles> polysWithHoles = PolygonHelper.createChunksPolygon(region, 70);
-
-                    if (polysWithHoles != null && !polysWithHoles.isEmpty()) {
-                        polygons.addAll(polysWithHoles); // ✅ Keep holes
-                    } else {
-                        // Fallback: create simple bounding or chunk polygon
-                        MapPolygon fallback = createFallbackPolygon(region);
-                        if (fallback != null) {
-                            polygons.add(new MapPolygonWithHoles(fallback, Collections.emptyList()));
-                        }
-                    }
-                } catch (Exception e) {
-                    // If helper fails, still make something visible
+                if (polysWithHoles != null && !polysWithHoles.isEmpty()) {
+                    polygons.addAll(polysWithHoles);
+                } else {
                     MapPolygon fallback = createFallbackPolygon(region);
                     if (fallback != null) {
                         polygons.add(new MapPolygonWithHoles(fallback, Collections.emptyList()));
                     }
                 }
+            } catch (Exception e) {
+                MapPolygon fallback = createFallbackPolygon(region);
+                if (fallback != null) {
+                    polygons.add(new MapPolygonWithHoles(fallback, Collections.emptyList()));
+                }
             }
-        } catch (Exception e) {
-            // No polygons at all if something fatal happens
-            return Collections.emptyList();
         }
 
         return polygons;
@@ -435,26 +430,24 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
     }
     
     /**
-     * Flood fill to find connected chunks
+     * Flood fill to find connected chunks (iterative to avoid StackOverflow on large regions)
      */
     private void floodFill(ChunkPos start, Set<ChunkPos> allChunks, Set<ChunkPos> visited, Set<ChunkPos> region) {
-        if (visited.contains(start) || !allChunks.contains(start)) {
-            return;
-        }
-        
-        visited.add(start);
-        region.add(start);
-        
-        // Check 4 adjacent chunks
-        ChunkPos[] neighbors = {
-            new ChunkPos(start.x + 1, start.z),     // East
-            new ChunkPos(start.x - 1, start.z),     // West
-            new ChunkPos(start.x, start.z + 1),     // South
-            new ChunkPos(start.x, start.z - 1)      // North
-        };
-        
-        for (ChunkPos neighbor : neighbors) {
-            floodFill(neighbor, allChunks, visited, region);
+        Deque<ChunkPos> stack = new ArrayDeque<>();
+        stack.push(start);
+
+        while (!stack.isEmpty()) {
+            ChunkPos current = stack.pop();
+            if (visited.contains(current) || !allChunks.contains(current)) {
+                continue;
+            }
+            visited.add(current);
+            region.add(current);
+
+            stack.push(new ChunkPos(current.x + 1, current.z));
+            stack.push(new ChunkPos(current.x - 1, current.z));
+            stack.push(new ChunkPos(current.x, current.z + 1));
+            stack.push(new ChunkPos(current.x, current.z - 1));
         }
     }
     
@@ -651,29 +644,22 @@ public class FactionOverlayManager implements ClientFactionManager.FactionUpdate
      * Complete clean and redraw for a faction
      */
     private void completelyRefreshFaction(ClientFaction faction) {
-        String factionId = faction.getId();
-        JourneyFactions.debugLog("=== COMPLETE REFRESH STARTING FOR FACTION: {} ===", faction.getName());
-        
-        // Step 1: Nuclear removal of all overlays
-        completelyRemoveFactionOverlays(factionId);
-        
-        // Step 2: Short delay to ensure cleanup is processed
-        try {
-            Thread.sleep(100); // 100ms delay
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        
-        // Step 3: Only recreate if faction has chunks
-        if (!faction.getClaimedChunks().isEmpty()) {
-            JourneyFactions.debugLog("Recreating overlays for faction: {} with {} chunks", 
-                faction.getName(), faction.getClaimedChunks().size());
-            createOrUpdateFactionOverlay(faction, faction.getClaimedChunks());
-        } else {
-            JourneyFactions.debugLog("Faction {} has no chunks, not recreating overlays", faction.getName());
-        }
-        
-        JourneyFactions.debugLog("=== COMPLETE REFRESH FINISHED FOR FACTION: {} ===", faction.getName());
+        overlayExecutor.submit(() -> {
+            String factionId = faction.getId();
+            JourneyFactions.debugLog("=== COMPLETE REFRESH STARTING FOR FACTION: {} ===", faction.getName());
+
+            completelyRemoveFactionOverlays(factionId);
+
+            if (!faction.getClaimedChunks().isEmpty()) {
+                JourneyFactions.debugLog("Recreating overlays for faction: {} with {} chunks",
+                    faction.getName(), faction.getClaimedChunks().size());
+                createOrUpdateFactionOverlay(faction, faction.getClaimedChunks());
+            } else {
+                JourneyFactions.debugLog("Faction {} has no chunks, not recreating overlays", faction.getName());
+            }
+
+            JourneyFactions.debugLog("=== COMPLETE REFRESH FINISHED FOR FACTION: {} ===", faction.getName());
+        });
     }
     
     @Override

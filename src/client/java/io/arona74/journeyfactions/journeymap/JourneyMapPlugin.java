@@ -39,11 +39,8 @@ public class JourneyMapPlugin implements IClientPlugin {
             JourneyFactions.getFactionManager().addListener(overlayManager);
             JourneyFactions.debugLog("Connected to faction manager");
             
-            // Initialize the faction toggle button/keybinding
-            FactionToggleButton.initialize(jmClientApi);
-            
             // Initialize context menu integration
-            JourneyMapContextIntegration.initialize(jmClientApi);
+            JourneyMapContextIntegration.initialize();
             
             JourneyFactions.debugLog("Plugin initialization complete - waiting for mapping events");
             
@@ -124,7 +121,6 @@ public class JourneyMapPlugin implements IClientPlugin {
                 JourneyFactions.getFactionManager().removeListener(overlayManager);
             }
             
-            FactionToggleButton.cleanup();
             JourneyMapContextIntegration.cleanup();
             
             JourneyFactions.LOGGER.info("JourneyMapPlugin cleanup completed");
